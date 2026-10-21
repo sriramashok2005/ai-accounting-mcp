@@ -17,15 +17,8 @@ MODEL_NAME = "llama3.2"
 OLLAMA_URL = "http://localhost:11434/api/chat"
 
 
-
 def read_user_message():
-    """
-    Read a single-line question or a multi-line transaction request.
-
-    For a transaction, start with a complete action such as
-    'Record a transaction:' and press Enter on a blank line
-    after entering all fields.
-    """
+    """Read a question or a multi-line transaction request."""
 
     first_line = input("\nYou: ").strip()
 
@@ -62,9 +55,8 @@ def read_user_message():
     return "\n".join(lines).strip()
 
 
-
 def ask_ollama(messages, tools):
-    """Send the conversation and available tools to Ollama."""
+    """Send the conversation and tools to Ollama."""
 
     payload = {
         "model": MODEL_NAME,
@@ -93,7 +85,6 @@ def ask_ollama(messages, tools):
             "utf-8",
             errors="replace",
         )
-
         raise RuntimeError(
             f"Ollama API error ({error.code}): {details}"
         ) from error
@@ -105,10 +96,8 @@ def ask_ollama(messages, tools):
         ) from error
 
 
-
-
 def get_tool_text(result):
-    """Convert an MCP response into text for the AI model."""
+    """Convert an MCP response into text."""
 
     structured = getattr(
         result,
@@ -139,7 +128,7 @@ def get_tool_text(result):
 
 
 def convert_mcp_tools(mcp_tools):
-    """Convert MCP tool definitions into Ollama tool definitions."""
+    """Convert MCP tools into Ollama tool definitions."""
 
     converted_tools = []
 
@@ -158,19 +147,8 @@ def convert_mcp_tools(mcp_tools):
     return converted_tools
 
 
-
-
 def get_field(question, field_pattern):
-    """
-    Read one explicitly labelled field from the original request.
-
-    Examples:
-        description: Office rent
-        debit account: Rent Expense
-        credit account: Cash
-        amount: 100 rupees
-        date: 2026-10-20
-    """
+    """Read an explicitly labelled field from the user request."""
 
     pattern = (
         r"^\s*(?:"
@@ -188,18 +166,16 @@ def get_field(question, field_pattern):
         return None
 
     value = match.group(1).strip()
-
     return value if value else None
 
 
 def parse_money(value):
-    """Parse an explicitly provided amount without guessing."""
+    """Parse a provided monetary amount."""
 
     if value is None:
         raise ValueError("Amount is missing.")
 
-    cleaned = str(value).strip()
-    cleaned = cleaned.replace(",", "")
+    cleaned = str(value).strip().replace(",", "")
 
     cleaned = re.sub(
         r"^(?:₹|INR|Rs\.?)\s*",
@@ -228,8 +204,7 @@ def parse_money(value):
 
 def validate_transaction_arguments(arguments, question):
     """
-    Compare the proposed tool arguments with the user's original
-    request. Do not let the model invent missing transaction details.
+    Validate proposed transaction values against the user's request.
 
     Returns:
         (validated_arguments, None) on success
@@ -253,31 +228,17 @@ def validate_transaction_arguments(arguments, question):
     if not isinstance(arguments, dict):
         return None, "Transaction blocked: invalid tool arguments."
 
-    # Read required fields from the original user message.
-    requested_description = get_field(
-        question,
-        r"description",
-    )
-
+    requested_description = get_field(question, r"description")
     requested_debit = get_field(
         question,
         r"debit(?:\s+account|_account)",
     )
-
     requested_credit = get_field(
         question,
         r"credit(?:\s+account|_account)",
     )
-
-    requested_amount_text = get_field(
-        question,
-        r"amount",
-    )
-
-    requested_date = get_field(
-        question,
-        r"date|entry_date",
-    )
+    requested_amount_text = get_field(question, r"amount")
+    requested_date = get_field(question, r"date|entry_date")
 
     missing_fields = []
 
@@ -303,15 +264,11 @@ def validate_transaction_arguments(arguments, question):
             + ". No transaction was saved."
         )
 
-    
     try:
-        requested_amount = parse_money(
-            requested_amount_text
-        )
+        requested_amount = parse_money(requested_amount_text)
     except ValueError as error:
         return None, f"Transaction blocked: {error}"
 
-    # Validate the original date.
     try:
         date.fromisoformat(requested_date)
     except ValueError:
@@ -319,35 +276,24 @@ def validate_transaction_arguments(arguments, question):
             "Transaction blocked. Date must use YYYY-MM-DD format."
         )
 
-    # The accounts must be different.
-    if (
-        requested_debit.casefold()
-        == requested_credit.casefold()
-    ):
+    if requested_debit.casefold() == requested_credit.casefold():
         return None, (
             "Transaction blocked. Debit and credit accounts "
             "must be different."
         )
 
-    # Compare model-proposed values against the user's values.
     proposed_description = arguments.get("description")
     proposed_debit = arguments.get("debit_account")
     proposed_credit = arguments.get("credit_account")
 
     if not isinstance(proposed_description, str):
-        return None, (
-            "Transaction blocked: the proposed description is invalid."
-        )
+        return None, "Transaction blocked: invalid description."
 
     if not isinstance(proposed_debit, str):
-        return None, (
-            "Transaction blocked: the proposed debit account is invalid."
-        )
+        return None, "Transaction blocked: invalid debit account."
 
     if not isinstance(proposed_credit, str):
-        return None, (
-            "Transaction blocked: the proposed credit account is invalid."
-        )
+        return None, "Transaction blocked: invalid credit account."
 
     if proposed_description.strip() != requested_description:
         return None, (
@@ -368,9 +314,7 @@ def validate_transaction_arguments(arguments, question):
         )
 
     try:
-        proposed_amount = parse_money(
-            arguments.get("amount")
-        )
+        proposed_amount = parse_money(arguments.get("amount"))
     except ValueError as error:
         return None, (
             f"Transaction blocked: invalid proposed amount. {error}"
@@ -394,7 +338,6 @@ def validate_transaction_arguments(arguments, question):
             f"{requested_date}, but the AI proposed {proposed_date}."
         )
 
-    
     validated_arguments = {
         "description": requested_description,
         "debit_account": requested_debit,
@@ -407,7 +350,7 @@ def validate_transaction_arguments(arguments, question):
 
 
 def confirm_transaction(arguments):
-    """Show the exact transaction and require explicit confirmation."""
+    """Show the transaction and require explicit confirmation."""
 
     print("\nTRANSACTION REVIEW")
     print("=" * 42)
@@ -427,9 +370,8 @@ def confirm_transaction(arguments):
     return answer == "CONFIRM"
 
 
-
 async def run_assistant():
-    """Connect the Ollama model to the Accounting MCP server."""
+    """Connect Ollama to the Accounting MCP server."""
 
     server_parameters = StdioServerParameters(
         command=sys.executable,
@@ -444,14 +386,10 @@ async def run_assistant():
             read_stream,
             write_stream,
         ) as session:
-
             await session.initialize()
 
             tools_result = await session.list_tools()
-
-            ollama_tools = convert_mcp_tools(
-                tools_result.tools
-            )
+            ollama_tools = convert_mcp_tools(tools_result.tools)
 
             available_tools = {
                 tool.name: tool
@@ -473,7 +411,6 @@ async def run_assistant():
             while True:
                 try:
                     question = read_user_message()
-
                 except (EOFError, KeyboardInterrupt):
                     print("\nAssistant stopped.")
                     break
@@ -512,7 +449,6 @@ async def run_assistant():
                 ]
 
                 try:
-                    # Limit each user question to five model/tool rounds.
                     for _ in range(5):
                         assistant_message = ask_ollama(
                             messages,
@@ -531,7 +467,6 @@ async def run_assistant():
                                 "content",
                                 "",
                             )
-
                             print(f"\nAssistant: {answer}\n")
                             break
 
@@ -540,11 +475,7 @@ async def run_assistant():
                         for tool_call in tool_calls:
                             function = tool_call["function"]
                             tool_name = function["name"]
-
-                            arguments = function.get(
-                                "arguments",
-                                {},
-                            )
+                            arguments = function.get("arguments", {})
 
                             if isinstance(arguments, str):
                                 try:
@@ -567,13 +498,7 @@ async def run_assistant():
 
                                 if error:
                                     print(f"\n{error}")
-                                    print(
-                                        "No transaction was saved.\n"
-                                    )
-
-                                    # Stop the current model/tool round
-                                    # so the AI cannot silently retry
-                                    # the write operation with new values.
+                                    print("No transaction was saved.\n")
                                     stop_current_turn = True
                                     break
 
@@ -582,7 +507,6 @@ async def run_assistant():
                                         "\nTransaction cancelled. "
                                         "Nothing was saved.\n"
                                     )
-
                                     stop_current_turn = True
                                     break
 
@@ -594,7 +518,10 @@ async def run_assistant():
                                 try:
                                     result = await session.call_tool(
                                         "add_transaction",
-                                        arguments=validated,
+                                        arguments={
+                                            **validated,
+                                            "confirmation": "CONFIRM",
+                                        },
                                     )
 
                                     tool_output = get_tool_text(result)
@@ -607,12 +534,9 @@ async def run_assistant():
                                         "Transaction execution failed: "
                                         f"{error}"
                                     )
-
                                     print(tool_output)
 
                             else:
-                                # Read-only tools do not need write
-                                # confirmation.
                                 print(
                                     f"\n[Calling MCP tool: {tool_name}]"
                                 )
@@ -622,7 +546,6 @@ async def run_assistant():
                                         tool_name,
                                         arguments=arguments,
                                     )
-
                                     tool_output = get_tool_text(result)
 
                                 except Exception as error:

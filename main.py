@@ -13,6 +13,7 @@ from src.database import get_accounts
 mcp = FastMCP("Accounting Intelligence Assistant")
 
 
+
 @mcp.tool()
 def add_transaction(
     description: str,
@@ -20,8 +21,14 @@ def add_transaction(
     credit_account: str,
     amount: float,
     entry_date: str | None = None,
+    confirmation: str = "",
 ) -> dict:
-    """Record an accounting transaction with equal debit and credit amounts."""
+    """Record an accounting transaction after explicit confirmation."""
+
+    if confirmation != "CONFIRM":
+        raise ValueError(
+            "Transaction not recorded. Explicit confirmation is required."
+        )
 
     return record_transaction(
         description=description,
@@ -30,6 +37,7 @@ def add_transaction(
         amount=amount,
         entry_date=entry_date,
     )
+
 
 
 @mcp.tool()
